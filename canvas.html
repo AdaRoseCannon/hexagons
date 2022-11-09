@@ -1,0 +1,57 @@
+<html>
+  <body>
+    <canvas width="1024" height="1024"></canvas>
+    <script type="module">
+      import { HexagonGrid } from "./hexagons.js";
+      import {Map2D, Set2D} from "./utils.js";
+      import perlin from "./perlin.js";
+      const canvas = document.querySelector('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      const grid = new HexagonGrid(32);
+      grid.setOffset([512,512]);
+
+      const hexesToBigHex = new Map2D();
+      
+      const imageData = ctx.createImageData(1024, 1024);
+      for (let i=0;i<1024*1024*4;i+=4) {
+        const hex = grid.fromPoint([i/4%1024, Math.floor(i/4/1024)]);
+        
+        const inHex = HexagonGrid.fromPoint(grid.getCenter(hex), 512-96, [512, 512]);
+        const inHex2 = HexagonGrid.fromPoint([i/4%1024, Math.floor(i/4/1024)], 512-96, [512, 512]);
+        
+        if (!hexesToBigHex.has(hex)) {
+          hexesToBigHex.set(hex, new Set2D());
+        }
+        const set = hexesToBigHex.get(hex);
+        set.add(inHex2);
+      }
+  
+      for (let i=0;i<1024*1024*4;i+=4) {
+        let hex = grid.fromPoint([i/4%1024, Math.floor(i/4/1024)]);
+        if (hexesToBigHex.get(hex).size >= 2) {
+          const bigHexes = Array.from(hexesToBigHex.get(hex));
+          let bigHex = bigHexes.sort((a,b)=>a[0]-b[0])[0];
+          const offset = HexagonGrid.getCenter(bigHex, 512-96);
+          hex = grid.fromPoint([i/4%1024 - offset[0], Math.floor(i/4/1024) - offset[1]]);
+        }
+        const val = perlin(0.95*(hex[0]-10), 0.95*(hex[1]-10));
+        
+        imageData.data[i+0] = 128+128*val;
+        imageData.data[i+1] = 128+128*val;
+        imageData.data[i+2] = 128+128*val;
+        imageData.data[i+3] = 255;
+  
+        const inHex = HexagonGrid.fromPoint([i/4%1024, Math.floor(i/4/1024)], 512-96, [512, 512]);
+        if (inHex[0] !== 0 || inHex[1] !== 0) {
+          imageData.data[i+0] *= 0.5;
+          imageData.data[i+1] *= 0.5;
+          imageData.data[i+2] *= 0.5;
+        }
+      }
+      
+      
+      ctx.putImageData(imageData,0,0);
+    </script>
+  </body>
+</html>
