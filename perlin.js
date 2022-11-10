@@ -53,4 +53,6 @@ class Perlin {
     }
 }
 
-export default Perlin
+export {
+    Perlin
+}

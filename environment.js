@@ -1,5 +1,5 @@
-import Perlin from './perlin.js';
-import {HexagonGrid, Set2D, Map2D} from './hexagons.js';
+import { Perlin } from './perlin.js';
+import {HexagonGrid, Set2D} from './hexagons.js';
 
 import {
   Scene,
@@ -15,43 +15,40 @@ import {
   VSMShadowMap,
   MathUtils,
   ACESFilmicToneMapping,
-  NoToneMapping,
   PMREMGenerator,
   WebGLCubeRenderTarget,
   CubeCamera,
-  RGBAFormat,
-  LinearMipmapLinearFilter,
   InstancedMesh,
   Matrix4,
   Quaternion,
   Vector3,
   Color,
   MeshBasicMaterial,
-  BoxGeometry,
   sRGBEncoding,
-  SpotLight
-} from 'https://cdn.skypack.dev/three@0.134.0';
-import { OrbitControls } from 'https://cdn.skypack.dev/three@0.134.0/examples/jsm/controls/OrbitControls.js';
-import { Sky } from 'https://cdn.skypack.dev/three@0.134.0/examples/jsm/objects/Sky.js';
-import { LightProbeGenerator } from 'https://cdn.skypack.dev/three@0.134.0/examples/jsm/lights/LightProbeGenerator.js';
+  SpotLight} from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
+import { LightProbeGenerator } from 'three/examples/jsm/lights/LightProbeGenerator.js';
   
 const tempMatrix = new Matrix4();
 const tempQuaternion = new Quaternion();
 const tempPosition = new Vector3();
 const tempScale = new Vector3();
 const tempColor = new Color();
-const origin = [0,0];
+const gridOrigin = [0,0];
 const outerRadius = 15;
 
 export const renderer = new WebGLRenderer({
   antialias: true
 });
+renderer.toneMapping = ACESFilmicToneMapping;
 renderer.physicallyCorrectLights = true;
 renderer.logarithmicDepthBuffer = true;
 renderer.outputEncoding = sRGBEncoding;
 renderer.setSize( window.innerWidth, window.innerHeight );
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = VSMShadowMap;
+window.renderer = renderer;
 document.body.appendChild( renderer.domElement );
 
 export const scene = new Scene();
@@ -89,7 +86,7 @@ dirLight.shadow.camera.top = dirLight.shadow.camera.right = outerRadius*0.75;
 window.dirLight = dirLight;
 scene.add(dirLight);
 
-const spotLight = new SpotLight( 0xffffff, 2, 0, 0.3, 0.1 );
+const spotLight = new SpotLight( 0xffffff, 20, 0, 0.3, 0.1 );
 spotLight.position.set( 2, 3, 0 );
 spotLight.lookAt(scene.position);
 spotLight.castShadow = true;
@@ -104,43 +101,35 @@ scene.add( spotLight );
 
 const pmremGenerator = new PMREMGenerator(renderer);
 pmremGenerator.compileCubemapShader();
-const cubeRenderTarget = new WebGLCubeRenderTarget(256, { format: RGBAFormat, generateMipmaps: true, minFilter: LinearMipmapLinearFilter });
+const cubeRenderTarget = new WebGLCubeRenderTarget(256, { generateMipmaps: true});
 const cubeCamera = new CubeCamera(0.1, 1500, cubeRenderTarget);
-cubeCamera.position.set(0, 1.6, 0);
 let lightProbe;
-
-function lightIntensity(k) {
-  if (lightProbe) lightProbe.intensity = k/4;
-  dirLight.intensity = 3*k/4;
-}
 
 const sky = new Sky();
 sky.scale.set(1000,1000,1000);
 scene.add( sky );
 
-const sun = new Mesh(new SphereGeometry(50), new MeshBasicMaterial());
+const sun = new Mesh(new SphereGeometry(50), new MeshBasicMaterial({
+  toneMapped: false
+}));
 scene.add(sun);
 
 function updateSky(options) {
   scene.add(sky);
-  scene.background = null;
-  scene.environment = null;
-  renderer.toneMapping = ACESFilmicToneMapping;
-  
-  const uniforms = sky.material.uniforms;
-  uniforms[ 'turbidity' ].value = options.turbidity;
-  uniforms[ 'rayleigh' ].value = options.rayleigh;
-  uniforms[ 'mieCoefficient' ].value = options.mieCoefficient;
-  uniforms[ 'mieDirectionalG' ].value = options.mieDirectionalG;
 
   const phi = MathUtils.degToRad( 90 - Math.min(options.elevation,175) );
   const theta = MathUtils.degToRad( options.azimuth );
 
   dirLight.position.setFromSphericalCoords( 20, phi, theta );
   sun.position.setFromSphericalCoords( 1000, phi, theta );
-
-  uniforms[ 'sunPosition' ].value.copy( dirLight.position );
   renderer.toneMappingExposure = options.exposure;
+
+  const uniforms = sky.material.uniforms;
+  uniforms.turbidity.value = options.turbidity;
+  uniforms.rayleigh.value = options.rayleigh;
+  uniforms.mieCoefficient.value = options.mieCoefficient;
+  uniforms.mieDirectionalG.value = options.mieDirectionalG;
+  uniforms.sunPosition.value.copy( dirLight.position );
 }
 
 export const renderCallbacks = [];
@@ -164,7 +153,10 @@ function updateByTime(time) {
   time=time === undefined ? d.getHours()+d.getMinutes()/60 : time;
   const proportionThroughDay = sigmoid01(MathUtils.clamp(MathUtils.inverseLerp(5,22,time),1/180,180/180));
   const elevation = 182*proportionThroughDay-1;
-  dirLight.color.lerpColors(skyOrange,skyMidday,0.9*Math.sin(Math.PI*proportionThroughDay));
+
+  const sunUpness = Math.sqrt(1-Math.pow(proportionThroughDay*2-1,2));
+
+  dirLight.color.lerpColors(skyOrange,skyMidday,sunUpness);
   sun.material.color.copy(dirLight.color);
   updateSky({
     turbidity: 10,
@@ -173,43 +165,33 @@ function updateByTime(time) {
     mieDirectionalG: 0.7,
     elevation,
     azimuth: 245,
-    exposure: 0.5*(Math.sin(Math.PI*proportionThroughDay))
+    exposure: 0.2
   });
-  lightIntensity(0.6 + 0.6*(Math.sin(Math.PI*proportionThroughDay)));
+
+  dirLight.intensity = 2 + 8 * sunUpness;
+  dirLight.shadow.needsUpdate = true;
+
+  renderEnv();
+  lightProbe.intensity = 2 + 5 * sunUpness;
 }
-updateByTime();
+updateByTime(18);
 
 function renderEnv() {
-  const tempScene = new Scene();
-  tempScene.add(floor);
-  tempScene.add( sky );
-  cubeCamera.update(renderer, tempScene);
-  tempScene.remove( sky );
-  scene.add(floor);
-
+  scene.environment = undefined;
   if (lightProbe) lightProbe.removeFromParent();
+  cubeCamera.position.set(0, 0.5, 0);
+  cubeCamera.update(renderer, scene);
+
   lightProbe = LightProbeGenerator.fromCubeRenderTarget(renderer, cubeRenderTarget);
   scene.add(lightProbe);
-  lightProbe.intensity = dirLight.intensity;
 
-  scene.background = cubeRenderTarget.texture;
+  // Can't use the same for background and environment because
+  // background is tonemapped so it gets tonemapped twice!!
+  // scene.background = cubeRenderTarget.texture;
   scene.environment = pmremGenerator.fromCubemap(
     cubeRenderTarget.texture
   ).texture;
   
-  // const skyCube = new Mesh(
-  //   new BoxGeometry(1000, 1000, 1000),
-  //   new MeshBasicMaterial({
-  //     color: 0xffffff,
-  //     envMap: cubeRenderTarget.texture,
-  //     toneMapped: false,
-  //     side: 1
-  //   })
-  // );
-  // scene.add(skyCube);
-  // window.skyCube = skyCube;
-  
-  renderer.toneMapping = NoToneMapping;
 }
 
 export function addDecoration(hex, shadow) {
@@ -226,23 +208,24 @@ export function addDecoration(hex, shadow) {
     -outerRadius,
     hex => {
       const testPoint = hexes.getCenter(hex);
-      const d = HexagonGrid.realDistance(origin, testPoint);
+      const d = HexagonGrid.realDistance(gridOrigin, testPoint);
       const cutOff = Math.max(0.5-0.5*d/outerRadius, 0.1);
       const [x,y] = HexagonGrid.fromPoint(testPoint, outerRadius);
       const perlinXY = perlin.get(perlinScale*testPoint[0], perlinScale*testPoint[1]);
       // console.log(perlinXY);
-      return x==0 &&
-        y==0 && 
+      return x===0 &&
+        y===0 && 
         perlinXY>=cutOff;
     }
   );
   
   const hexMeshMat = hex.material.clone();
+  hexMeshMat.color.set(0xffffff);
   hexMeshMat.roughness = 0.4;
   hexMeshMat.metalness = 0.2;
   const hexMesh = new InstancedMesh( hex.geometry, hexMeshMat, set2D.size );
-  hexMesh.castShadow = true
-  hexMesh.receiveShadow = true
+  hexMesh.castShadow = true;
+  hexMesh.receiveShadow = true;
   scene.add( hexMesh );
 
   const shadowMesh = new InstancedMesh( shadow.geometry, shadow.material, set2D.size );
@@ -252,7 +235,7 @@ export function addDecoration(hex, shadow) {
   for (const hex of set2D) {
     const center = hexes.getCenter(hex);
     const [x,z] = center;
-    const dist = HexagonGrid.realDistance(origin, center);
+    const dist = HexagonGrid.realDistance(gridOrigin, center);
     const height = 8*perlin.get(perlinScale*x, perlinScale*z)*(dist/outerRadius)**2;
 
     // Set color
@@ -270,10 +253,10 @@ export function addDecoration(hex, shadow) {
     index++;
   }
   
-  dirLight.shadow.needsUpdate = true;
+  updateByTime(18);
 }
 
-const texture = new TextureLoader().load( 'https://cdn.glitch.me/2c81f270-d553-46c7-a777-7a487fed9eab%2Foriental-tiles.png?v=1634896030797', renderEnv);
+const texture = new TextureLoader().load( 'https://cdn.glitch.me/2c81f270-d553-46c7-a777-7a487fed9eab%2Foriental-tiles.png?v=1634896030797');
 const material = new MeshPhongMaterial( { map: texture  } );
 texture.repeat.x = texture.repeat.y = 50;
 texture.wrapS = texture.wrapT = RepeatWrapping;
@@ -283,3 +266,5 @@ floor.castShadow = false;
 floor.receiveShadow = true;
 floor.rotation.x=-Math.PI/2;
 scene.add(floor);
+
+window.updateByTime = updateByTime;

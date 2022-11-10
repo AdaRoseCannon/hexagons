@@ -4,35 +4,30 @@ import {
   Quaternion,
   Vector3,
   Color,
-  Scene,
   InstancedMesh,
   DynamicDrawUsage,
   InstancedBufferGeometry,
   InstancedBufferAttribute,
   Float32BufferAttribute,
-  MeshPhongMaterial,
   MeshBasicMaterial,
   MeshDepthMaterial,
   Group,
   MathUtils,
   PlaneGeometry,
   Mesh
-} from "https://cdn.skypack.dev/three@0.134.0";
-import { GLTFLoader } from "https://cdn.skypack.dev/three@0.134.0/examples/jsm/loaders/GLTFLoader.js";
-import { GLTFExporter } from "https://cdn.skypack.dev/three@0.134.0/examples/jsm/exporters/GLTFExporter.js";
-import { createMeshesFromInstancedMesh } from "https://cdn.skypack.dev/three@0.134.0/examples/jsm/utils/SceneUtils.js";
-import { mergeBufferGeometries } from "https://cdn.skypack.dev/three@0.134.0/examples/jsm/utils/BufferGeometryUtils.js";
+} from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { mergeBufferGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
   controls,
   scene,
-  renderCallbacks,
   addDecoration,
   renderer,
   camera
 } from "./environment.js";
 import { rotateLeft6 } from "./utils.js";
-import Perlin from "./perlin.js";
-import { DragControls } from 'https://cdn.skypack.dev/three@0.134.0/examples/jsm/controls/DragControls.js';
+import { Perlin } from "./perlin.js";
+import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
 
 const gridSize = 1.3;
 const hexes = (function () {
@@ -54,7 +49,6 @@ const tempQuaternion = new Quaternion();
 const tempPosition = new Vector3();
 const tempScale = new Vector3();
 const tempColor = new Color();
-const loader = new GLTFLoader();
 const yAxis = new Vector3(0, 1, 0);
 
 function round(number, to) {
@@ -71,11 +65,11 @@ function onDrag() {
   const hexRadius = hexes.getRadius();
   updateGrid(0, gridSize, [round(-dragGroup.position.x, hexRadius*2), round(-dragGroup.position.z, hexRadius*2)]);
 }
-dragControls.addEventListener( 'dragstart', function ( event ) {
+dragControls.addEventListener( 'dragstart', function ( ) {
   controls.enabled = false;
   intervalID = setInterval(onDrag, 60);
 });
-dragControls.addEventListener ( 'drag', function( event ){
+dragControls.addEventListener ( 'drag', function( ){
   const zoom = dragGroup.position.y;
   dragGroup.position.y = 0;
   const oldRadius = hexes.getRadius();
@@ -85,45 +79,12 @@ dragControls.addEventListener ( 'drag', function( event ){
     0.5*gridSize/8 // most zoomed in
   ));
 });
-dragControls.addEventListener( 'dragend', function ( event ) {
+dragControls.addEventListener( 'dragend', function ( ) {
   clearInterval(intervalID);
   controls.enabled = true;
   onDrag();
 });
 
-function exportGLB(objects, instances) {
-  const exporter = new GLTFExporter();
-  const outScene = new Scene();
-  for (const m of objects) {
-    outScene.add(m);
-  }
-  const materials = {};
-  for (const i of instances) {
-    const group = createMeshesFromInstancedMesh(i);
-    let index = 0;
-    for (const mesh of group.children) {
-      mesh.getColorAt(index++, tempColor);
-      const color = tempColor.getHex();
-      mesh.material = materials[color] =
-        materials[color] || mesh.material.clone();
-      materials[color].color.setHex(color);
-    }
-    outScene.add(group);
-  }
-  exporter.parse(
-    outScene,
-    function(gltf) {
-      const blob = new Blob([gltf], { type: "model/gltf-binary" });
-      const a = document.createElement("a");
-      a.href = window.URL.createObjectURL(blob);
-      a.setAttribute("download", "hexes.glb");
-      a.click();
-    },
-    {
-      binary: true
-    }
-  );
-}
 
 const gridInfo = new Map2D();
 const hillPerlin = new Perlin(3);
@@ -223,7 +184,6 @@ function updateGrid(shape = 0, size = 10, outerOffset = [0, 0]) {
   // Position eaach instance in the meshes
   let buildingIndex = 0;
   let grassIndex = 0;
-  const centerHex = [0,0];
   for (const hex of visibleHexes) {
     const info = gridInfo.get(hex);
     tempColor.set(0xffffff);
@@ -304,7 +264,6 @@ function setInstancedMesh(mesh, index, hex, rotation, height, scaleY=1) {
 }
 
 function onBeforeCompile( shader ) {
-    console.log(this, shader)
     shader.vertexShader = `attribute vec2 visiblevertices;
 attribute float myVertexIndex;
 ${shader.vertexShader}`
@@ -316,7 +275,7 @@ vec4 mvPosition = vec4( transformed, 1.0 );
 mvPosition = modelViewMatrix * mvPosition * float(myVertexIndex >= visiblevertices[0] && myVertexIndex <= visiblevertices[1]);
 gl_Position = projectionMatrix * mvPosition;
     `);
-};  
+}
 
 const customDepthMaterial = new MeshDepthMaterial();
 customDepthMaterial.onBeforeCompile = onBeforeCompile;
@@ -353,7 +312,7 @@ async function loadInterchangableHex(url, prefix) {
   }
   
   material.depthWrite = true;
-  material.onBeforeCompile = onBeforeCompile
+  material.onBeforeCompile = onBeforeCompile;
 
   const instancedMesh = new InstancedMesh(instancedGeom, material, 32);
   instancedMesh.geometry.setAttribute("visiblevertices", new InstancedBufferAttribute(new Float32Array(2*32), 2));
@@ -404,8 +363,11 @@ async function loadHex() {
   scene.add(hexMeshFromGLB);
 
   addDecoration(hexMeshFromGLB, shadow);
+  hexMeshFromGLB.material.side = 0;
+  hexMeshFromGLB.material.roughness = 0.01;
+  hexMeshFromGLB.material.metalness = 0.8;
   hexMesh = hexMeshFromGLB;
-};
+}
 
 let buildingMesh, buildingGeomInfo, grassMesh, grassGeomInfo;
 (async function () {
@@ -430,7 +392,7 @@ let buildingMesh, buildingGeomInfo, grassMesh, grassGeomInfo;
 }());
 
 // Draw the map
-(function () {
+if (false) (function () {
   const w=100;
   const h=100;
   const mapGeom = new PlaneGeometry(1,1, w-1,h-1);
@@ -473,4 +435,4 @@ let buildingMesh, buildingGeomInfo, grassMesh, grassGeomInfo;
   mapMesh.position.set(-1,1,-1.5);
   mapMesh.rotation.set(-0.3*Math.PI, 0,0);
   scene.add(mapMesh);
-}())
+}());
